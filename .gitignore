@@ -1,16 +1,12 @@
 
+# Python
 __pycache__/
-*.py[cod]
-.ipynb_checkpoints/
-.env
-.env.*
-!.env.example
-data/raw/*
-!data/raw/.gitkeep
-data/processed/*
-!data/processed/.gitkeep
-models/*
-!models/.gitkeep
-predictions/*
-!predictions/.gitkeep
-.DS_Store
+*.pyc
+
+# Virtual environment
+.venv/
+
+# Data and models
+data/
+models/
+predictions/
