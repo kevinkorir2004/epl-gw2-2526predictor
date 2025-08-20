@@ -1,45 +1,58 @@
-
-from dataclasses import dataclass
-import numpy as np
+import os
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
-from sklearn.metrics import log_loss, accuracy_score
-from sklearn.model_selection import TimeSeriesSplit
+import joblib
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
 
-@dataclass
-class TrainResult:
-    model: Pipeline
-    metrics: dict
+# ===========================
+# Load dataset
+# ===========================
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+DATA_PATH = os.path.join(PROJECT_ROOT, "data", "processed", "matches_normalized.csv")
 
-def make_pipeline(random_state=42):
-    features = ["elo_diff","gf_diff","ga_diff","elo_home_pre","elo_away_pre","home_gf","home_ga","away_gf","away_ga"]
-    pipe = Pipeline([
-        ("scaler", StandardScaler()),
-        ("clf", LogisticRegression(multi_class="multinomial", max_iter=200, random_state=random_state))
-    ])
-    return pipe, features
+print(f"📂 Loading dataset from: {DATA_PATH}")
+df = pd.read_csv(DATA_PATH)
 
-def time_series_cv(feats: pd.DataFrame, pipe: Pipeline, feature_cols, n_splits=5):
-    feats = feats.dropna(subset=feature_cols + ["y"]).copy()
-    X = feats[feature_cols].values
-    y = feats["y"].values.astype(int)
-    tscv = TimeSeriesSplit(n_splits=n_splits)
-    logs, accs = [], []
-    for train_idx, test_idx in tscv.split(X):
-        pipe.fit(X[train_idx], y[train_idx])
-        proba = pipe.predict_proba(X[test_idx])
-        y_pred = proba.argmax(axis=1)
-        logs.append(log_loss(y[test_idx], proba, labels=[0,1,2]))
-        accs.append(accuracy_score(y[test_idx], y_pred))
-    return {"cv_log_loss_mean": float(np.mean(logs)), "cv_accuracy_mean": float(np.mean(accs))}
+# ===========================
+# Encode categorical features
+# ===========================
+encoder = LabelEncoder()
+df["home_team_enc"] = encoder.fit_transform(df["home_team"])
+df["away_team_enc"] = encoder.fit_transform(df["away_team"])
 
-def train_final(feats: pd.DataFrame, random_state=42, cv_folds=5):
-    pipe, feature_cols = make_pipeline(random_state=random_state)
-    metrics = time_series_cv(feats, pipe, feature_cols, n_splits=cv_folds)
-    train_df = feats.dropna(subset=feature_cols + ["y"]).copy()
-    X = train_df[feature_cols].values
-    y = train_df["y"].values.astype(int)
-    pipe.fit(X, y)
-    return TrainResult(model=pipe, metrics=metrics), feature_cols
+# ===========================
+# Features + Target
+# ===========================
+X = df[["home_team_enc", "away_team_enc", "odds_home_avg", "odds_draw_avg", "odds_away_avg"]]
+y = df["result"]  # values like "H", "A", "D"
+
+# ===========================
+# Train/test split
+# ===========================
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+# ===========================
+# Model
+# ===========================
+model = RandomForestClassifier(n_estimators=200, random_state=42)
+model.fit(X_train, y_train)
+
+# ===========================
+# Evaluate
+# ===========================
+y_pred = model.predict(X_test)
+acc = accuracy_score(y_test, y_pred)
+print(f"✅ Model trained. Accuracy: {acc:.2%}")
+
+# ===========================
+# Save artifacts
+# ===========================
+os.makedirs("models", exist_ok=True)
+joblib.dump(model, "models/random_forest.pkl")
+joblib.dump(encoder, "models/label_encoder.pkl")
+print("💾 Model + encoder saved in models/")
+

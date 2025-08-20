@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 # Python
 __pycache__/
@@ -10,3 +11,19 @@ __pycache__/
 data/
 models/
 predictions/
+=======
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual env
+.venv/
+
+# Data & artifacts (keep these out of git)
+data/
+models/
+predictions/
+
+>>>>>>> 0ee1d8c (Step 1: add real EPL data downloader + normalized dataset)

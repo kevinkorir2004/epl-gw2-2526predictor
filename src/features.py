@@ -1,48 +1,72 @@
-
 import pandas as pd
-from pathlib import Path
-import yaml
+import os
 
-from src.elo import EloParams, compute_match_elos
-from src.utils import outcome_to_label
 
-PROCESSED_DIR = Path("data/processed")
+RAW_DATA = "data/processed/matches_normalized.csv"
+PROCESSED_DATA = "data/processed/epl_features.csv"
 
-def load_config():
-    with open("config.yaml", "r") as f:
-        return yaml.safe_load(f)
+os.makedirs("data/processed", exist_ok=True)
 
-def build_features():
-    cfg = load_config()
-    matches = pd.read_csv(PROCESSED_DIR / "matches_normalized.csv", parse_dates=["date"])
-    params = EloParams(k_factor=cfg["elo"]["k_factor"], home_advantage=cfg["elo"]["home_advantage"])
-    matches = compute_match_elos(matches, params)
+def load_and_clean():
+    df = pd.read_csv(RAW_DATA)
 
-    window = cfg["features"]["rolling_window"]
-    # rolling means per team
-    matches = matches.sort_values("date").reset_index(drop=True)
+    # Standardize column names to lower case (from normalized dataset)
+    df = df[['date', 'home_team', 'away_team', 'home_goals', 'away_goals', 'result']]
 
-    def team_rolls(df, gf_col, ga_col, prefix):
-        df = df.sort_values("date")
-        df[f"{prefix}_gf"] = df[gf_col].rolling(window, min_periods=1).mean()
-        df[f"{prefix}_ga"] = df[ga_col].rolling(window, min_periods=1).mean()
-        return df
+    # Rename to match our feature engineering pipeline
+    df = df.rename(columns={
+        'date': 'Date',
+        'home_team': 'HomeTeam',
+        'away_team': 'AwayTeam',
+        'home_goals': 'FTHG',
+        'away_goals': 'FTAG',
+        'result': 'FTR'
+    })
 
-    home_hist = matches.groupby("home_team", group_keys=False).apply(lambda g: team_rolls(g, "home_goals","away_goals","home"))
-    away_hist = matches.groupby("away_team", group_keys=False).apply(lambda g: team_rolls(g, "away_goals","home_goals","away"))
+    df['Date'] = pd.to_datetime(df['Date'])
+    return df
 
-    feats = matches[["date","home_team","away_team","home_goals","away_goals","result","elo_home_pre","elo_away_pre"]].copy()
-    feats = feats.merge(home_hist[["date","home_team","away_team","home_gf","home_ga"]], on=["date","home_team","away_team"])
-    feats = feats.merge(away_hist[["date","home_team","away_team","away_gf","away_ga"]], on=["date","home_team","away_team"])
 
-    feats["y"] = feats["result"].apply(outcome_to_label)
-    feats["elo_diff"] = feats["elo_home_pre"] - feats["elo_away_pre"]
-    feats["gf_diff"] = feats["home_gf"] - feats["away_gf"]
-    feats["ga_diff"] = feats["away_ga"] - feats["home_ga"]
+def create_features(df):
+    features = []
 
-    feats.to_csv(PROCESSED_DIR / "features.csv", index=False)
-    return feats
+    teams = pd.concat([df['HomeTeam'], df['AwayTeam']]).unique()
+
+    for team in teams:
+        team_home = df[df['HomeTeam'] == team][['Date', 'FTHG', 'FTAG', 'FTR']].copy()
+        team_away = df[df['AwayTeam'] == team][['Date', 'FTHG', 'FTAG', 'FTR']].copy()
+
+        # Rename columns consistently
+        team_home = team_home.rename(columns={'FTHG': 'GoalsFor', 'FTAG': 'GoalsAgainst', 'FTR': 'Result'})
+        team_away = team_away.rename(columns={'FTHG': 'GoalsFor', 'FTAG': 'GoalsAgainst', 'FTR': 'Result'})
+
+        team_home['Venue'] = 'Home'
+        team_away['Venue'] = 'Away'
+
+        team_matches = pd.concat([team_home, team_away]).sort_values('Date')
+        team_matches['Team'] = team
+
+        # Rolling averages for form
+        team_matches['GF_avg'] = team_matches['GoalsFor'].rolling(5, min_periods=1).mean()
+        team_matches['GA_avg'] = team_matches['GoalsAgainst'].rolling(5, min_periods=1).mean()
+
+        features.append(team_matches)
+
+    return pd.concat(features).reset_index(drop=True)
 
 if __name__ == "__main__":
-    feats = build_features()
-    print(f"Saved {PROCESSED_DIR / 'features.csv'} with {len(feats)} rows.")
+    print("🔄 Loading and cleaning data...")
+    df = load_and_clean()
+
+    print("✨ Creating features...")
+    features_df = create_features(df)
+
+    # Ensure processed folder exists
+    import os
+    os.makedirs("data/processed", exist_ok=True)
+
+    # Save features
+    features_df.to_csv("data/processed/features.csv", index=False)
+    print("✅ Features saved to data/processed/features.csv")
+
+

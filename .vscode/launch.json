@@ -1,0 +1,36 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    
+    {
+      "name": "Run Data Pipeline",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/data.py",
+      "console": "integratedTerminal",
+      "args": ["--download"]
+    },
+    {
+      "name": "Run Feature Builder",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/features.py",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Train Model",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/train.py",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Predict GW2 Matches",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/predict.py",
+      "console": "integratedTerminal",
+      "args": ["--season", "2025", "--matchday", "2", "--out", "predictions/prem_gw2.csv"]
+    }
+  ]
+}
